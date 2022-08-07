@@ -1,0 +1,201 @@
+Option Explicit
+
+Dim database As ListObject
+
+
+Sub RegisterPatientsOnNHR()
+
+    Call openWebsite("register")
+    
+End Sub
+
+
+Sub openWebsite(mode)
+
+    Dim ie As New SHDocVw.InternetExplorer
+               
+    
+    ie.Visible = True
+    ie.navigate "https://nww.mdsas.nhs.uk/nhrv2/Account/Login"
+    
+    Call WaitToLoad(ie)
+    
+    Call loginNHR(ie)
+    
+    If mode = "register" Then
+        Call LoopThruPatients(ie)
+    ElseIf mode = "reviews" Then
+        Call GetAnnualReviewDates(ie)
+    End If
+    
+End Sub
+
+
+Sub loginNHR(browserInstance)
+
+    browserInstance.document.getElementById("Username").Value = "YOUR LOGIN"
+    browserInstance.document.getElementById("Password").Value = "YOUR PASSWORD"
+    browserInstance.document.querySelector("button[type='submit'][data-cy='login-sign-in']").Click
+    
+    'Call WaitToLoad(ie)
+    
+    'The Pin element is not found on the page for some reason even after loading
+    Do While Not IsObject(browserInstance.document.getElementById("Pin"))
+        Application.Wait Now + TimeValue("00:00:01")
+    Loop
+    
+    browserInstance.document.getElementById("Pin").Value = "YOUR PIN"
+    browserInstance.document.querySelector("button[type='submit']").Click
+    
+    Application.Wait Now + TimeValue("00:00:02")
+    
+    If IsObject(browserInstance.document.getElementById("Password")) Then
+        Call loginNHR(browserInstance)
+    End If
+
+End Sub
+
+
+Sub WaitToLoad(browserInstance)
+
+    Do While browserInstance.ReadyState <> READYSTATE_COMPLETE
+        Application.Wait Now + TimeValue("00:00:01")
+        DoEvents
+    Loop
+    
+End Sub
+
+
+'Loop through the active patient list to find all patients inactive on NHR
+Sub LoopThruPatients(browserInstance)
+
+    Dim db As ListObject
+    Set db = ActiveSheet.ListObjects("Database")
+    
+    Dim registeredPatients As Integer
+    Dim alreadyRegistered As Integer
+    Dim wrongDiagnosis As Integer
+    
+    Dim diagnosisList As New Scripting.Dictionary
+    
+    diagnosisList.Add "HbSS", 1
+    diagnosisList.Add "HbSC", 2
+    diagnosisList.Add "HbS O Arab", 3
+    diagnosisList.Add "HbS D Punjab", 4
+    diagnosisList.Add "HbS Lepore", 5
+    diagnosisList.Add "HbSE", 6
+    diagnosisList.Add "HbS Beta 0 thalassaemia", 7
+    diagnosisList.Add "HbS Beta + thalassaemia", 8
+    diagnosisList.Add "HbS HPFH", 9
+    diagnosisList.Add "HbS: variant", 10
+    diagnosisList.Add "Beta thalassaemia major (excluding HbE Beta thalassaemia)", 11
+    diagnosisList.Add "E beta thalassaemia (transfusion dependant)", 12
+    diagnosisList.Add "E Beta thalassaemia (not transfusion dependant)", 13
+    diagnosisList.Add "Beta thalassaemia intermedia (excluding HbE thalassaemia)", 14
+    diagnosisList.Add "HbH Disease", 15
+    diagnosisList.Add "HbH: constant spring", 16
+    diagnosisList.Add "HbH : variant", 17
+    diagnosisList.Add "Alpha thalassaemia Major", 18
+    diagnosisList.Add "Other Thalassaemia", 19
+    diagnosisList.Add "Diamond Blackfan Anaemia", 20
+    diagnosisList.Add "ADA 2", 21
+    diagnosisList.Add "Congenital dyseythropoietic anaemia type 1", 22
+    diagnosisList.Add "Congenital dyseythropoietic anaemia type II", 23
+    diagnosisList.Add "Congenital dyseythropoietic anaemia type III", 24
+    diagnosisList.Add "Congenital dyseythropoietic anaemia type IV", 25
+    diagnosisList.Add "Congenital dyseythropoietic anaemia type VI", 26
+    diagnosisList.Add "Congenital dyseythropoietic anaemia type other", 27
+    diagnosisList.Add "Pyruvate Kinase Deficiency", 28
+    diagnosisList.Add "Glucose Phosphate Isomerase Deficiency", 29
+    diagnosisList.Add "Hexokinase Deficiency", 30
+    diagnosisList.Add "Sideroblastic anaemia", 31
+    diagnosisList.Add "Unstable haemoglobin", 32
+    diagnosisList.Add "Methaemoglobin", 33
+    diagnosisList.Add "High affinity haemoglobin haemoglobin", 34
+    diagnosisList.Add "Transfusion dependent membrane disorders", 35
+    diagnosisList.Add "Other rare anaemia cause unknown", 36
+    
+    Dim rw As Variant
+    For Each rw In db.DataBodyRange.Rows
+        
+      Call RegisterPatient(browserInstance, rw, diagnosisList, registeredPatients, alreadyRegistered, wrongDiagnosis)
+    
+    Next rw
+    
+    Dim registerMessage As String
+    registerMessage = CStr(registeredPatients) & " patients registered on NHR." & vbNewLine & vbNewLine
+    registerMessage = registerMessage & alreadyRegistered & " patients are already on NHR (first names highlighted in bold)." & vbNewLine & vbNewLine
+    registerMessage = registerMessage & wrongDiagnosis & " patients failed to register due to a wrong diagnosis label (first names highlighted in bold and italics)."
+    MsgBox registerMessage
+
+End Sub
+
+
+Sub RegisterPatient(browserInstance, patient, diagnosisList, registeredPatients, alreadyRegistered, wrongDiagnosis)
+    
+    browserInstance.navigate "https://nww.mdsas.nhs.uk/nhrv2/Patient/Register"
+    Call WaitToLoad(browserInstance)
+    
+    browserInstance.document.getElementById("registerPatientNHSNumber").Value = patient.Cells(4)
+    
+    browserInstance.document.getElementById("RegisterPatient_DateOfBirth").Value = Format(patient.Cells(5), "dd/mm/yyyy")
+    browserInstance.document.getElementById("RegisterPatient_Forename").Value = patient.Cells(1)
+    browserInstance.document.getElementById("RegisterPatient_Surname").Value = patient.Cells(2)
+    
+    If patient.Cells(6) = "Male" Then
+        browserInstance.document.getElementById("RegisterPatient_GenderId").Value = "1"
+    ElseIf patient.Cells(6) = "Female" Then
+        browserInstance.document.getElementById("RegisterPatient_GenderId").Value = "2"
+    End If
+     
+    browserInstance.document.querySelector("a[href='#next']").Click
+    Call WaitToLoad(browserInstance)
+    
+    browserInstance.document.querySelector("a[href='#previous']").Click
+    Call WaitToLoad(browserInstance)
+    
+    If Not IsObject(browserInstance.document.getElementById("registerPatientNHSNumber-error")) Then
+        
+        'Skip patients who have had no outpatient contact in the past year (Column S)
+        If patient.Cells(19) = False Then
+            Exit Sub
+        End If
+        
+        browserInstance.document.querySelector("a[href='#next']").Click
+        Call WaitToLoad(browserInstance)
+    Else
+        patient.Cells(1).Font.Bold = True
+        alreadyRegistered = alreadyRegistered + 1
+        Exit Sub
+    End If
+    
+    browserInstance.document.getElementById("RegisterPatient_CountryOfBirthId").Value = "196"
+    browserInstance.document.getElementById("RegisterPatient_EthnicityId").Value = "19"
+    browserInstance.document.getElementById("RegisterPatient_EmploymentStatusId").Value = "5"
+    browserInstance.document.getElementById("RegisterPatient_Postcode").Value = "UNKNOWN"
+    
+    browserInstance.document.querySelector("a[href='#next']").Click
+    Call WaitToLoad(browserInstance)
+    
+    browserInstance.document.getElementById("RegisterPatient_SHTId").Value = "9"
+    browserInstance.document.getElementById("RegisterPatient_HCCId").Value = "7"
+    
+    browserInstance.document.querySelector("a[href='#next']").Click
+    Call WaitToLoad(browserInstance)
+    
+    browserInstance.document.getElementById("RegisterPatient_SecondaryDiagnosisId").Value = diagnosisList(patient.Cells(7).Value)
+    
+    browserInstance.document.querySelector("a[href='#finish']").Click
+    
+    If Not IsObject(browserInstance.document.getElementById("RegisterPatient_SecondaryDiagnosisId-error")) Then
+        Call WaitToLoad(browserInstance)
+        patient.Cells(16) = True
+        registeredPatients = registeredPatients + 1
+        patient.Cells(1).Font.Underline = True
+    Else
+        patient.Cells(1).Font.Bold = True
+        patient.Cells(1).Font.Italic = True
+        wrongDiagnosis = wrongDiagnosis + 1
+    End If
+        
+End Sub
